@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import { crawlUrl } from "../crawl.js";
 import { crawlWithFirecrawl } from "../firecrawl.js";
+import { crawlWithPlaywright } from "../playwright.js";
 import { chunkDocuments } from "../chunk.js";
 import { generateEmbeddings } from "../embed.js";
 import { getServersDir } from "../utils.js";
@@ -15,6 +16,7 @@ interface AddOptions {
   depth?: string;
   maxPages?: string;
   firecrawl?: boolean;
+  playwright?: boolean;
 }
 
 /**
@@ -39,14 +41,20 @@ export async function addToServer(url: string, options: AddOptions): Promise<voi
   console.log(chalk.blue(`\nAdding docs to ${serverName}\n`));
 
   // Crawl
-  const useFirecrawl = options.firecrawl;
+  const crawlMethod = options.firecrawl ? "firecrawl" : options.playwright ? "playwright" : "default";
   const crawlSpinner = ora(
-    useFirecrawl ? "Crawling with Firecrawl..." : "Crawling pages..."
+    crawlMethod === "firecrawl"
+      ? "Crawling with Firecrawl..."
+      : crawlMethod === "playwright"
+      ? "Crawling with Playwright (this may take a while)..."
+      : "Crawling pages..."
   ).start();
 
   let documents;
-  if (useFirecrawl) {
+  if (crawlMethod === "firecrawl") {
     documents = await crawlWithFirecrawl(url, { maxPages });
+  } else if (crawlMethod === "playwright") {
+    documents = await crawlWithPlaywright(url, { maxDepth, maxPages });
   } else {
     documents = await crawlUrl(url, { maxDepth, maxPages });
   }

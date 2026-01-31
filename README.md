@@ -1,10 +1,10 @@
 # docslurp
 
-Turn any documentation site into an MCP server with semantic search.
+Give Claude Code access to any documentation. Always up to date, never hallucinated.
 
 ## What is this?
 
-docslurp crawls a documentation website, chunks the content, generates embeddings, and spits out a ready-to-use MCP server. You can then connect it to Claude Code (or any MCP-compatible tool) and search your docs using natural language.
+docslurp crawls a documentation website, chunks the content, generates embeddings, and creates an MCP server. Connect it to Claude Code and Claude can pull in the latest docs while helping you build. This way you're working with current APIs, not whatever was in the training data.
 
 ## Quick start
 
@@ -15,7 +15,7 @@ npm install -g docslurp
 # Set your API keys
 export OPENAI_API_KEY=sk-...
 
-# Create an MCP server from docs (use --firecrawl for JS-rendered sites)
+# Create an MCP server from docs (use --playwright or --firecrawl for JS-rendered sites)
 docslurp https://docs.example.com --name my-docs
 
 # Install the generated server's dependencies
@@ -25,7 +25,7 @@ cd ~/.docslurp/servers/my-docs && npm install
 claude mcp add my-docs -- node ~/.docslurp/servers/my-docs/index.js
 ```
 
-That's it. Now you can ask Claude questions about your documentation.
+That's it. Claude now has real-time access to the docs while helping you build.
 
 ## How it works
 
@@ -53,10 +53,11 @@ The generated server has three tools:
 ## Options
 
 ```
---name, -n      Name for the server (required)
---depth, -d     How many links deep to crawl (default: 3)
---max-pages, -m Maximum pages to crawl (default: 100)
---firecrawl, -f Use Firecrawl for JavaScript-rendered sites
+--name, -n       Name for the server (required)
+--depth, -d      How many links deep to crawl (default: 3)
+--max-pages, -m  Maximum pages to crawl (default: 100)
+--firecrawl, -f  Use Firecrawl API for JS-rendered sites (fast, 500 page limit on free tier)
+--playwright, -p Use Playwright for JS-rendered sites (slower but free, no limits)
 ```
 
 ## Requirements
@@ -77,14 +78,28 @@ cd ~/.docslurp/servers/<name> && npm install
 
 ## JavaScript-rendered sites
 
-Some docs sites (like Salesforce, Notion, etc.) load content with JavaScript. The default crawler won't pick those up. Use the `--firecrawl` flag instead:
+Some docs sites (like Salesforce, Notion, etc.) load content with JavaScript. The default crawler won't pick those up. You have two options:
+
+### Option 1: Playwright (free, no limits)
+
+Playwright runs a real browser to render pages. It's slower but completely free with no page limits:
+
+```bash
+docslurp https://developer.salesforce.com/docs --name sf-docs --playwright
+```
+
+Note: First run will download browser binaries (~150MB).
+
+### Option 2: Firecrawl (fast, API-based)
+
+Firecrawl is faster but requires an API key and has a 500 page limit on the free tier:
 
 ```bash
 export FIRECRAWL_API_KEY=fc-...
 docslurp https://developer.salesforce.com/docs --name sf-docs --firecrawl
 ```
 
-Get your Firecrawl API key at https://firecrawl.dev (they have a free tier).
+Get your API key at https://firecrawl.dev.
 
 ## Where stuff lives
 
@@ -97,10 +112,13 @@ Servers are stored in `~/.docslurp/servers/`. Each one has:
 ## Examples
 
 ```bash
-# Index React docs (static site, no firecrawl needed)
+# Index React docs (static site, default crawler works fine)
 docslurp https://react.dev/learn --name react-docs
 
-# Index Salesforce docs (JS-rendered, needs firecrawl)
+# Index Salesforce docs with Playwright (free, no limits)
+docslurp https://developer.salesforce.com/docs --name sf-docs --playwright
+
+# Index Salesforce docs with Firecrawl (faster but has page limits)
 docslurp https://developer.salesforce.com/docs --name sf-docs --firecrawl
 
 # Index with more depth

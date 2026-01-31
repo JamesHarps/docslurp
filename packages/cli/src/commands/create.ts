@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { crawlUrl } from "../crawl.js";
 import { crawlWithFirecrawl } from "../firecrawl.js";
+import { crawlWithPlaywright } from "../playwright.js";
 import { chunkDocuments } from "../chunk.js";
 import { generateEmbeddings } from "../embed.js";
 import { generateMcpServer } from "../generate.js";
@@ -14,6 +15,7 @@ interface CreateOptions {
   depth: string;
   maxPages: string;
   firecrawl?: boolean;
+  playwright?: boolean;
 }
 
 export async function createServer(url: string, options: CreateOptions): Promise<void> {
@@ -39,14 +41,23 @@ export async function createServer(url: string, options: CreateOptions): Promise
   console.log(chalk.gray(`Source: ${url}\n`));
 
   // Step 1: Crawl
-  const useFirecrawl = options.firecrawl;
+  const crawlMethod = options.firecrawl ? "firecrawl" : options.playwright ? "playwright" : "default";
   const crawlSpinner = ora(
-    useFirecrawl ? "Crawling with Firecrawl..." : "Crawling documentation..."
+    crawlMethod === "firecrawl"
+      ? "Crawling with Firecrawl..."
+      : crawlMethod === "playwright"
+      ? "Crawling with Playwright (this may take a while)..."
+      : "Crawling documentation..."
   ).start();
   let documents;
   try {
-    if (useFirecrawl) {
+    if (crawlMethod === "firecrawl") {
       documents = await crawlWithFirecrawl(url, {
+        maxPages: parseInt(maxPages),
+      });
+    } else if (crawlMethod === "playwright") {
+      documents = await crawlWithPlaywright(url, {
+        maxDepth: parseInt(depth),
         maxPages: parseInt(maxPages),
       });
     } else {

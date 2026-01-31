@@ -22,6 +22,7 @@ program
   .option("-d, --depth <number>", "Maximum crawl depth", "3")
   .option("-m, --max-pages <number>", "Maximum pages to crawl", "100")
   .option("-f, --firecrawl", "Use Firecrawl for JS-rendered sites")
+  .option("-p, --playwright", "Use Playwright for JS-rendered sites (slower but free)")
   .action(async (url, options) => {
     await createServer(url, options);
   });
@@ -33,6 +34,7 @@ program
   .option("-d, --depth <number>", "Maximum crawl depth", "3")
   .option("-m, --max-pages <number>", "Maximum pages to crawl", "100")
   .option("-f, --firecrawl", "Use Firecrawl for JS-rendered sites")
+  .option("-p, --playwright", "Use Playwright for JS-rendered sites (slower but free)")
   .action(async (url, options) => {
     if (url && options.name) {
       await createServer(url, options);
@@ -47,6 +49,7 @@ program
   .option("-d, --depth <number>", "Maximum crawl depth", "3")
   .option("-m, --max-pages <number>", "Maximum pages to crawl", "100")
   .option("-f, --firecrawl", "Use Firecrawl for JS-rendered sites")
+  .option("-p, --playwright", "Use Playwright for JS-rendered sites (slower but free)")
   .action(async (url, options) => {
     await addToServer(url, options);
   });
