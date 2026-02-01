@@ -17,7 +17,7 @@ program
   .version("0.1.0");
 
 program
-  .command("create")
+  .command("create", { isDefault: true })
   .description("Create an MCP server from a documentation URL")
   .argument("<url>", "The documentation URL to crawl")
   .requiredOption("-n, --name <name>", "Name for the MCP server")
@@ -27,20 +27,6 @@ program
   .option("-p, --playwright", "Use Playwright for JS-rendered sites (slower but free)")
   .action(async (url, options) => {
     await createServer(url, options);
-  });
-
-// Shorthand: docslurp <url> --name <name>
-program
-  .argument("[url]", "The documentation URL to crawl")
-  .option("-n, --name <name>", "Name for the MCP server")
-  .option("-d, --depth <number>", "Maximum crawl depth", "3")
-  .option("-m, --max-pages <number>", "Maximum pages to crawl", "100")
-  .option("-f, --firecrawl", "Use Firecrawl for JS-rendered sites")
-  .option("-p, --playwright", "Use Playwright for JS-rendered sites (slower but free)")
-  .action(async (url, options) => {
-    if (url && options.name) {
-      await createServer(url, options);
-    }
   });
 
 program

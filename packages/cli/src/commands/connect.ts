@@ -13,6 +13,9 @@ export async function connectServer(name: string): Promise<void> {
   }
 
   console.log(chalk.bold("\nTo add this server to Claude Code:\n"));
+  console.log(chalk.gray("  # Add to current project only"));
   console.log(chalk.cyan(`  claude mcp add ${name} -- node ${serverDir}/index.js\n`));
+  console.log(chalk.gray("  # Add globally (available in all projects)"));
+  console.log(chalk.cyan(`  claude mcp add -s user ${name} -- node ${serverDir}/index.js\n`));
   console.log(chalk.gray("After adding, restart Claude Code and check with /mcp\n"));
 }

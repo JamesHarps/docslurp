@@ -25,9 +25,10 @@ export async function crawlWithFirecrawl(
 
   const firecrawl = new FirecrawlApp({ apiKey });
 
-  // First try scraping a single page if it's a specific URL
+  // First try scraping a single page if it's a specific file URL
   // crawlUrl is for crawling entire sites, scrapeUrl is for single pages
-  const isSinglePage = startUrl.includes(".html") || startUrl.endsWith("/");
+  // URLs ending in .html or .htm are single pages; trailing slash means a directory to crawl
+  const isSinglePage = /\.(html?|pdf|txt)$/i.test(startUrl);
 
   if (isSinglePage) {
     // Use scrape for single pages
