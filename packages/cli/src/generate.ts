@@ -1,9 +1,8 @@
 import fs from "fs";
 import path from "path";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
 import { DocumentChunk } from "./chunk.js";
 import { getServersDir } from "./utils.js";
+import { openDatabase, insertChunkWithEmbedding } from "./db-utils.js";
 
 /**
  * Generates a complete MCP server for the given documentation.
@@ -21,19 +20,27 @@ export async function generateMcpServer(
 
   // Create and populate the vector database
   const dbPath = path.join(serverDir, "vectors.db");
-  const db = new Database(dbPath);
-  // Disable BigInt mode so rowids are regular numbers (sqlite-vec requires this)
-  db.defaultSafeIntegers(false);
-  sqliteVec.load(db);
+  const db = openDatabase(dbPath);
 
-  // Create tables
+  // Create tables with new schema (includes source_id and embedding_blob)
   db.exec(`
     CREATE TABLE IF NOT EXISTS chunks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       content TEXT NOT NULL,
       url TEXT NOT NULL,
       title TEXT NOT NULL,
-      chunk_index INTEGER NOT NULL
+      chunk_index INTEGER NOT NULL,
+      source_id INTEGER DEFAULT 0,
+      embedding_blob BLOB
+    );
+
+    CREATE TABLE IF NOT EXISTS sources (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT NOT NULL,
+      added_at TEXT NOT NULL,
+      page_count INTEGER DEFAULT 0,
+      chunk_count INTEGER DEFAULT 0,
+      crawl_state TEXT
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
@@ -41,26 +48,15 @@ export async function generateMcpServer(
     );
   `);
 
+  // Create the source entry
+  const sourceResult = db
+    .prepare("INSERT INTO sources (url, added_at, page_count, chunk_count) VALUES (?, ?, ?, ?)")
+    .run(sourceUrl, new Date().toISOString(), new Set(chunks.map((c) => c.url)).size, chunks.length);
+  const sourceId = sourceResult.lastInsertRowid as number;
+
   // Insert chunks and embeddings
-  const insertChunk = db.prepare(
-    "INSERT INTO chunks (content, url, title, chunk_index) VALUES (?, ?, ?, ?)"
-  );
-
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    insertChunk.run(
-      chunk.content,
-      chunk.url,
-      chunk.title,
-      chunk.chunkIndex
-    );
-
-    if (chunk.embedding) {
-      const embeddingBuffer = new Float32Array(chunk.embedding).buffer;
-      const embeddingBytes = new Uint8Array(embeddingBuffer);
-      // Use raw SQL with vec_f32 function to insert the embedding
-      db.exec(`INSERT INTO vec_chunks (rowid, embedding) VALUES (${i + 1}, vec_f32(x'${Buffer.from(embeddingBytes).toString('hex')}'))`);
-    }
+  for (const chunk of chunks) {
+    insertChunkWithEmbedding(db, chunk, sourceId);
   }
   db.close();
 

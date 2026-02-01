@@ -2,14 +2,25 @@ import fs from "fs";
 import path from "path";
 import ora from "ora";
 import chalk from "chalk";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
 import { crawlUrl } from "../crawl.js";
 import { crawlWithFirecrawl } from "../firecrawl.js";
 import { crawlWithPlaywright } from "../playwright.js";
 import { chunkDocuments } from "../chunk.js";
 import { generateEmbeddings } from "../embed.js";
 import { getServersDir } from "../utils.js";
+import {
+  openDatabase,
+  migrateDatabase,
+  findSourceByUrl,
+  getOrCreateSource,
+  deleteChunksForSource,
+  rebuildVectorTable,
+  insertChunkWithEmbedding,
+  updateSourceMetadata,
+  getCrawlState,
+  saveCrawlState,
+  clearCrawlState,
+} from "../db-utils.js";
 
 interface AddOptions {
   to: string;
@@ -17,6 +28,8 @@ interface AddOptions {
   maxPages?: string;
   firecrawl?: boolean;
   playwright?: boolean;
+  force?: boolean;
+  continue?: boolean;
 }
 
 /**
@@ -40,6 +53,47 @@ export async function addToServer(url: string, options: AddOptions): Promise<voi
 
   console.log(chalk.blue(`\nAdding docs to ${serverName}\n`));
 
+  // Open database and run migrations
+  const db = openDatabase(dbPath);
+  const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+
+  // Migrate legacy config sources to database
+  const legacySources = config.sources || (config.sourceUrl ? [{ url: config.sourceUrl, addedAt: config.createdAt }] : []);
+  migrateDatabase(db, legacySources);
+
+  // Check for existing source (deduplication)
+  const existingSource = findSourceByUrl(db, url);
+  let sourceId: number;
+  let isUpdate = false;
+
+  if (existingSource && !options.force) {
+    // Handle continue option
+    if (options.continue) {
+      const crawlState = getCrawlState(db, existingSource.id);
+      if (!crawlState || !crawlState.pendingUrls?.length) {
+        console.error(chalk.red("No pending crawl to continue for this URL."));
+        console.error(chalk.gray("Use without --continue to start fresh."));
+        db.close();
+        process.exit(1);
+      }
+      console.log(chalk.yellow(`Resuming crawl with ${crawlState.pendingUrls.length} pending URLs...`));
+      sourceId = existingSource.id;
+      // TODO: Pass crawlState to crawler when resume is fully implemented
+    } else {
+      console.log(chalk.yellow(`\nSource already exists. Updating (replacing old content)...`));
+
+      // Delete old chunks for this source
+      const deletedCount = deleteChunksForSource(db, existingSource.id);
+      console.log(chalk.gray(`Removed ${deletedCount} old chunks`));
+
+      sourceId = existingSource.id;
+      isUpdate = true;
+    }
+  } else {
+    // Create new source
+    sourceId = getOrCreateSource(db, url);
+  }
+
   // Crawl
   const crawlMethod = options.firecrawl ? "firecrawl" : options.playwright ? "playwright" : "default";
   const crawlSpinner = ora(
@@ -62,7 +116,15 @@ export async function addToServer(url: string, options: AddOptions): Promise<voi
 
   if (documents.length === 0) {
     console.error(chalk.red("No content found. Check the URL."));
+    db.close();
     process.exit(1);
+  }
+
+  // Check if max pages was hit (for resume feature)
+  const maxPagesReached = documents.length >= maxPages;
+  if (maxPagesReached) {
+    console.log(chalk.yellow(`\nHit max-pages limit (${maxPages}). Use --continue to crawl more.`));
+    // TODO: Save pending URLs when crawler supports returning them
   }
 
   // Chunk
@@ -75,57 +137,49 @@ export async function addToServer(url: string, options: AddOptions): Promise<voi
   await generateEmbeddings(chunks);
   embedSpinner.succeed("Embeddings generated");
 
-  // Add to existing database
+  // Add to database
   const dbSpinner = ora("Adding to database...").start();
 
-  const db = new Database(dbPath);
-  // Disable BigInt mode so rowids are regular numbers (sqlite-vec requires this)
-  db.defaultSafeIntegers(false);
-  sqliteVec.load(db);
-
-  const insertChunk = db.prepare(
-    "INSERT INTO chunks (content, url, title, chunk_index) VALUES (?, ?, ?, ?)"
-  );
-
-  // Get the current max ID to continue from
-  const maxIdResult = db.prepare("SELECT MAX(id) as maxId FROM chunks").get() as { maxId: number | null };
-  const startRowId = (maxIdResult?.maxId || 0) + 1;
-
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    insertChunk.run(
-      chunk.content,
-      chunk.url,
-      chunk.title,
-      chunk.chunkIndex
-    );
-
-    if (chunk.embedding) {
-      const embeddingBuffer = new Float32Array(chunk.embedding).buffer;
-      const embeddingBytes = new Uint8Array(embeddingBuffer);
-      // Use raw SQL with vec_f32 function to insert the embedding
-      db.exec(`INSERT INTO vec_chunks (rowid, embedding) VALUES (${startRowId + i}, vec_f32(x'${Buffer.from(embeddingBytes).toString('hex')}'))`);
-    }
+  for (const chunk of chunks) {
+    insertChunkWithEmbedding(db, chunk, sourceId);
   }
+
+  // Update source metadata
+  const pageCount = new Set(chunks.map((c) => c.url)).size;
+  updateSourceMetadata(db, sourceId, pageCount, chunks.length);
+
+  // If we deleted chunks (update), rebuild the vector table
+  if (isUpdate) {
+    rebuildVectorTable(db);
+  }
+
+  // Clear crawl state if crawl completed successfully
+  if (!maxPagesReached) {
+    clearCrawlState(db, sourceId);
+  }
+
   db.close();
   dbSpinner.succeed("Added to database");
 
-  // Update config
-  const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-
+  // Update config.json for backwards compatibility
   if (!config.sources) {
-    // Migrate old single-source config to multi-source
-    config.sources = [{ url: config.sourceUrl, addedAt: config.createdAt }];
+    config.sources = legacySources;
   }
 
-  config.sources.push({ url, addedAt: new Date().toISOString() });
-  config.pageCount = (config.pageCount || 0) + new Set(chunks.map((c) => c.url)).size;
+  // Only add to sources if it's a new source
+  if (!existingSource || options.force) {
+    config.sources.push({ url, addedAt: new Date().toISOString() });
+  }
+
+  // Recalculate totals
+  config.pageCount = (config.pageCount || 0) + pageCount;
   config.chunkCount = (config.chunkCount || 0) + chunks.length;
   config.updatedAt = new Date().toISOString();
 
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
-  console.log(chalk.green(`\nDone! Added ${documents.length} pages to ${serverName}`));
+  const action = isUpdate ? "Updated" : "Added";
+  console.log(chalk.green(`\nDone! ${action} ${documents.length} pages in ${serverName}`));
   console.log(chalk.gray(`\nTotal sources: ${config.sources.length}`));
   config.sources.forEach((s: { url: string }) => {
     console.log(chalk.gray(`  - ${s.url}`));

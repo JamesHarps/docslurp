@@ -46,18 +46,33 @@ The generated server has three tools:
 |---------|-------------|
 | `docslurp <url> --name <name>` | Create an MCP server from a docs site |
 | `docslurp add <url> --to <name>` | Add more docs to an existing server |
+| `docslurp update <name>` | Re-scrape and refresh all sources |
+| `docslurp sources <name>` | List all sources with their stats |
 | `docslurp list` | Show all your servers |
 | `docslurp remove <name>` | Delete a server |
 | `docslurp connect <name>` | Print the command to add it to Claude Code |
 
 ## Options
 
+**For `create` and `add`:**
 ```
---name, -n       Name for the server (required)
+--name, -n       Name for the server (required for create)
+--to, -t         Server to add to (required for add)
 --depth, -d      How many links deep to crawl (default: 3)
 --max-pages, -m  Maximum pages to crawl (default: 100)
 --firecrawl, -f  Use Firecrawl API for JS-rendered sites (fast, 500 page limit on free tier)
 --playwright, -p Use Playwright for JS-rendered sites (slower but free, no limits)
+--force          Skip duplicate check, add as new source (add only)
+--continue       Resume an interrupted crawl (add only)
+```
+
+**For `update`:**
+```
+--url, -u        Only update a specific source URL
+--depth, -d      How many links deep to crawl (default: 3)
+--max-pages, -m  Maximum pages to crawl (default: 100)
+--firecrawl, -f  Use Firecrawl for JS-rendered sites
+--playwright, -p Use Playwright for JS-rendered sites
 ```
 
 ## Requirements
@@ -142,6 +157,44 @@ docslurp add https://docs.plaid.com --to payment-apis
 ```
 
 Now searching `payment-apis` will hit all three doc sources at once.
+
+**Auto-deduplication**: If you add a URL that already exists, docslurp will update it instead of creating duplicates:
+
+```bash
+# This updates the existing source instead of duplicating
+docslurp add https://docs.stripe.com --to payment-apis
+
+# Use --force to add as a new source anyway
+docslurp add https://docs.stripe.com --to payment-apis --force
+```
+
+## Updating docs
+
+When documentation changes, re-scrape to get the latest content:
+
+```bash
+# Update all sources for a server
+docslurp update my-docs
+
+# Update just one specific source
+docslurp update my-docs --url https://docs.example.com
+
+# See what sources exist
+docslurp sources my-docs
+```
+
+The `sources` command shows each source with page counts and when it was added:
+
+```
+Sources for my-docs:
+
+ID  URL                                              Pages  Chunks  Added
+────────────────────────────────────────────────────────────────────────────────
+ 1  https://docs.stripe.com                            42     215  1/15/2026
+ 2  https://www.twilio.com/docs                        38     189  1/20/2026
+────────────────────────────────────────────────────────────────────────────────
+Total: 2 source(s)
+```
 
 ## Limitations
 

@@ -6,6 +6,8 @@ import { addToServer } from "./commands/add.js";
 import { listServers } from "./commands/list.js";
 import { removeServer } from "./commands/remove.js";
 import { connectServer } from "./commands/connect.js";
+import { listSources } from "./commands/sources.js";
+import { updateServer } from "./commands/update.js";
 
 const program = new Command();
 
@@ -50,8 +52,31 @@ program
   .option("-m, --max-pages <number>", "Maximum pages to crawl", "100")
   .option("-f, --firecrawl", "Use Firecrawl for JS-rendered sites")
   .option("-p, --playwright", "Use Playwright for JS-rendered sites (slower but free)")
+  .option("--force", "Skip duplicate check, always add as new source")
+  .option("--continue", "Resume a previous interrupted crawl")
   .action(async (url, options) => {
     await addToServer(url, options);
+  });
+
+program
+  .command("update")
+  .description("Re-scrape and update sources for an existing server")
+  .argument("<name>", "Name of the server to update")
+  .option("-u, --url <url>", "Only update a specific source URL")
+  .option("-d, --depth <number>", "Maximum crawl depth", "3")
+  .option("-m, --max-pages <number>", "Maximum pages to crawl", "100")
+  .option("-f, --firecrawl", "Use Firecrawl for JS-rendered sites")
+  .option("-p, --playwright", "Use Playwright for JS-rendered sites (slower but free)")
+  .action(async (name, options) => {
+    await updateServer(name, options);
+  });
+
+program
+  .command("sources")
+  .description("List all sources for an MCP server")
+  .argument("<name>", "Name of the server")
+  .action(async (name) => {
+    await listSources(name);
   });
 
 program
