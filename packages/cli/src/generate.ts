@@ -155,8 +155,8 @@ server.tool(
         FROM vec_chunks
         LEFT JOIN chunks ON chunks.id = vec_chunks.rowid
         WHERE embedding MATCH ?
+          AND k = ?
         ORDER BY distance
-        LIMIT ?
       \`).all(new Uint8Array(embeddingBuffer), limit);
 
       const formatted = results.map((r, i) =>
@@ -197,8 +197,8 @@ server.tool(
         FROM vec_chunks
         LEFT JOIN chunks ON chunks.id = vec_chunks.rowid
         WHERE embedding MATCH ?
+          AND k = 5
         ORDER BY distance
-        LIMIT 5
       \`).all(new Uint8Array(embeddingBuffer));
 
       const context = results.map(r => r.content).join("\\n\\n");

@@ -47,8 +47,8 @@ export class VectorStore {
       FROM vec_chunks
       LEFT JOIN chunks ON chunks.id = vec_chunks.rowid
       WHERE embedding MATCH ?
+        AND k = ?
       ORDER BY distance
-      LIMIT ?
     `
       )
       .all(new Uint8Array(embeddingBuffer), limit) as SearchResult[];
